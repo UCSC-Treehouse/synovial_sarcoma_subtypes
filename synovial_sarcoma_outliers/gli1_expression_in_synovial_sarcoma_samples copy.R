@@ -7,13 +7,13 @@ library(dplyr)
 library(tidyverse)
 library(xlsx)
 
-
-base_dir = "/Users/yvonnevasquez/Desktop/Synovial_Sarcoma_Project/"
+# base_dir = "/Users/yvonnevasquez/Desktop/Synovial_Sarcoma_Project/"
+base_dir = "/Users/hbeale/Documents/Dropbox/ucsc/projects/gitCode/synovial_sarcoma_subtypes/"
 setwd(base_dir)
 
 
-path_to_data = "/Users/yvonnevasquez/Desktop/Synovial_Sarcoma_Project/syn_sarcoma_outliers/"
-
+# path_to_data = "/Users/yvonnevasquez/Desktop/Synovial_Sarcoma_Project/syn_sarcoma_outliers/"
+path_to_data = "/Users/hbeale/Documents/Dropbox/ucsc/projects/gitCode/synovial_sarcoma_subtypes/synovial_sarcoma_outliers"
 ###
 # sample info
 ###
