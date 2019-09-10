@@ -1,0 +1,198 @@
+---
+title: "Synovial Sarcoma up-outlier gene list for comparison to rhabdosarcoma up-outliers"
+output: html_notebook
+Last Edited Date: 8/26/19
+
+---
+```{r}
+library(readr)
+library(dplyr)
+library(tidyverse)
+
+base_dir = "/Users/yvonnevasquez/Documents/GitHub/synovial_sarcoma_subtypes/synovial_sarcoma_outliers/"
+setwd(base_dir)
+
+path_to_data = "/Users/yvonnevasquez/Documents/GitHub/synovial_sarcoma_subtypes/synovial_sarcoma_outliers/syn_sarcoma_outliers/"
+
+
+###
+# sample info
+###
+
+fusion_results <- read_tsv(file.path(base_dir, "ss_sample_fusion_data - Sheet1.tsv"))
+cluster_assignments <- read_tsv(file.path(base_dir,"synovial-hydra-assignments.tsv"))
+histological_types <- read_tsv(file.path(base_dir, "SS_sample_histological_type_info - Sheet1.tsv"))
+
+#create data table with 
+sample_info <- full_join(fusion_results, cluster_assignments, by=c("sample_id"="sample"))
+#add histology info
+sample_info_full <- full_join(sample_info, histological_types, by=c('sample_id'='th_sampleid')) 
+
+#calculate how many samples are in each SS subtype cluster 
+num_total_samples <- sample_info_full %>% mutate(num_total_samples = n())
+
+
+
+
+
+###
+# gene info
+###
+
+#column specifications: specifies data type found in each column
+col_spec=cols(
+  Gene = col_character(),
+  sample = col_double(),
+  is_top_5 = col_character(),
+  pc_low = col_double(),
+  pc_median = col_double(),
+  pc_high = col_double(),
+  pc_outlier = col_character(),
+  pc_is_filtered = col_character(),
+  pd_low = col_character(),
+  pd_median = col_character(),
+  pd_high = col_character(),
+  pd_outlier = col_character(),
+  pc_percentile = col_integer()
+)
+
+#combine all SS sample expression data files
+expression_data_raw<-lapply(sample_info_full$sample_id, function(sample_id) {
+  # sample_id = sample_info_full$sample_id[1]
+  file_name <-  file.path(path_to_data, paste0("outlier_results_", sample_id))
+  if (file.exists(file_name)) {
+    raw_outlier_candidates <- read_tsv(file_name, col_types=col_spec) %>%
+      rename(expression_in_log2tpm1 =sample, gene=Gene) %>%
+      mutate(
+        sample_id=sample_id,
+      ) 
+  }
+}) %>% bind_rows
+
+
+expression_data_filtered <- select(expression_data_raw, gene,pc_outlier, pd_outlier, sample_id, expression_in_log2tpm1, pc_high, is_top_5)
+
+
+##Add sample info to data for filtering
+expression_data_genes <- left_join(expression_data_filtered, num_total_samples, by="sample_id") 
+
+```
+
+
+```{r}
+###
+  #Outlier analysis of synovial sarcoma samples
+###
+
+#Add cancer gene and druggable gene info
+cancer_gene_names <- scan(file = file.path(base_dir, "aggregatedCancerGenes_2018-01-04_12.20.15PM.txt"), what = 'list')
+druggable_gene_names <- read.table(file = file.path(base_dir, "treehouseDruggableGenes_2019-06-12.txt"), header=TRUE, sep='\t')
+shh_genes <- scan(file=file.path(base_dir,"shh_genes.txt"), what='list', skip=2)
+
+
+filtered_cancer_druggable_genes <- expression_data_genes %>%
+  mutate('cancer_gene' = gene %in% cancer_gene_names,  'TH_druggable_gene?' = gene %in% druggable_gene_names$gene, 'shh_pathway_gene' = gene %in% shh_genes) 
+
+
+#Filter for genes that are pan-cancer (pc) or pan-disease (pd) up-outliers
+ss_upoutliers <- filter(filtered_cancer_druggable_genes,pc_outlier=="pc_up") %>%
+  group_by(gene) %>% 
+  mutate(
+    n_ss_samples_with_upoutlier = n(),
+    pct_ss_samples_with_upoutlier = (n_ss_samples_with_upoutlier/num_total_samples)*100
+  ) %>% select(-pd_outlier, -pc_high, -is_top_5)
+
+ 
+#full list of all upoutliers of synovial sarcoma samples
+all_ss_upoutliers_summary <- 
+  ss_upoutliers %>%
+  group_by(gene, n_ss_samples_with_upoutlier, pct_ss_samples_with_upoutlier) %>%
+  summarize(list_of_samples = paste(sample_id, collapse = ", ")) %>%
+  arrange(desc(pct_ss_samples_with_upoutlier), gene)
+
+#write_tsv(all_ss_upoutliers_summary, path="all_ss_upoutlier_gene_summary.tsv")
+
+
+#up outliers in greater than 10% of synovial sarcoma samples
+ss_up_outliers_gt_10pct_samples <- 
+  ss_upoutliers %>%
+  filter(pct_ss_samples_with_upoutlier>10,
+         n_ss_samples_with_upoutlier > 1) %>%  
+  arrange(desc(pct_ss_samples_with_upoutlier), gene) 
+
+#write_tsv(ss_up_outliers_gt_10pct_samples, path="ss_upoutliers_gt_10pct_samples.tsv")
+
+
+ss_upoutliers_gt_10pct_summary <- ss_up_outliers_gt_10pct_samples %>%
+  group_by(gene,pct_ss_samples_with_upoutlier) %>%
+  summarize(list_of_samples = paste(sample_id, collapse = ", ")) %>%
+  arrange(desc(pct_ss_samples_with_upoutlier)) %>% 
+  mutate('TH_druggable_gene' = gene %in% druggable_gene_names$gene, 'shh_pathway_gene' = gene %in% shh_genes) 
+  
+
+#write_tsv(ss_upoutliers_gt_10pct_summary, path="ss_gene_summary_table.tsv")
+
+#list of outliers in synovial sarcoma
+ss_outliers <- ss_upoutliers_gt_10pct_summary %>% select(gene)
+write_tsv(ss_outliers, path="list_of_synovial_sarcoma_outliers.tsv")
+
+```
+
+
+```{r}
+#find top 5 outliers in synovial sarcoma and their frequency in the samples
+top_5_outliers <- ss_upoutliers_gt_10pct_summary %>% 
+  select(gene, pct_ss_samples_with_upoutlier) %>% head(5)
+top_5_outliers$pct_ss_samples_with_upoutlier<-round(top_5_outliers$pct_ss_samples_with_upoutlier)
+#write_tsv(top_5_outliers, path="top_5_synovial_sarcoma_outliers.tsv")
+
+
+
+#find druggable outliers in synovial sarcoma and their frequency in the samples
+druggable_outliers <- ss_upoutliers_gt_10pct_summary %>%
+  filter(TH_druggable_gene== TRUE) %>% 
+  select(gene, pct_ss_samples_with_upoutlier) 
+druggable_outliers$pct_ss_samples_with_upoutlier<- round(druggable_outliers$pct_ss_samples_with_upoutlier)
+#write_tsv(druggable_outliers, path="druggable_synovial_sarcoma_outliers.tsv")
+
+
+
+#find outliers that are part of shh pathway and their frequency in the samples
+outliers_in_shh_pathway <- ss_upoutliers_gt_10pct_summary %>%
+  filter(shh_pathway_gene==TRUE) %>%
+  select(gene, pct_ss_samples_with_upoutlier)
+outliers_in_shh_pathway$pct_ss_samples_with_upoutlier <- round(outliers_in_shh_pathway$pct_ss_samples_with_upoutlier)
+#write_tsv(outliers_in_shh_pathway, path= "synovial_sarcoma_outliers_in_sonic_hedgehog_pathway.tsv")
+```
+
+```{r}
+#List of outliers found in samples with SSX1 fusion
+outliers_SSX1 <- ss_up_outliers_gt_10pct_samples %>%
+  filter(SS18_fusion_partner=='SSX1') %>% distinct(gene)
+
+#List of outliers found in samples with SSX2 fusion
+outliers_SSX2 <- ss_up_outliers_gt_10pct_samples %>%
+  filter(SS18_fusion_partner=='SSX2') %>% distinct(gene)
+
+#list of outliers common in both SSX1 & SSX2 fusion samples
+outliers_SSX1$fusion <- "SSX1"
+outliers_SSX2$fusion <- "SSX2"
+outliers_samp_fusion_type <- rbind(outliers_SSX1, outliers_SSX2) %>%
+  mutate(both_fusion = duplicated(gene,incomparables=FALSE)) %>%
+  group_by(gene)%>%
+  summarize(list_of_fusion_partners = paste(fusion, collapse=", ")) %>%
+  arrange(desc(list_of_fusion_partners))
+
+
+#list of outliers found in samples with all histological types
+outliers_all_hist_type <- ss_up_outliers_gt_10pct_samples %>%
+  select(gene, histology) %>%
+  na.omit(histology) %>%
+  group_by(gene) %>%
+  arrange(gene, histology) %>%
+  distinct(gene, histology, .keep_all=TRUE) %>%
+  summarize(list_of_histologies = paste(histology, collapse=", ")) 
+
+```
+
+
