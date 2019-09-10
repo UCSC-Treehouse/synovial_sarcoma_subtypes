@@ -7,9 +7,10 @@ library(dplyr)
 library(tidyverse)
 library(xlsx)
 
-base_dir = "/Users/yvonnevasquez/Desktop/Synovial_Sarcoma_Project/"
+base_dir = "/Users/yvonnevasquez/Documents/GitHub/synovial_sarcoma_subtypes/synovial_sarcoma_outliers/"
+setwd(base_dir)
 
-path_to_data = "/Users/yvonnevasquez/Desktop/Synovial_Sarcoma_Project/syn_sarcoma_outliers/"
+path_to_data = "/Users/yvonnevasquez/Documents/GitHub/synovial_sarcoma_subtypes/synovial_sarcoma_outliers/syn_sarcoma_outliers/"
 
 ###
 # sample info
@@ -73,7 +74,7 @@ multi_sample_outliers <- expression_data_filtered_genes_anno %>%
   filter(num_samples > 1)
 
 outlier_pct_samples_present_in <- multi_sample_outliers %>%
-  mutate(pct_samples_outlier_in = (num_samples/35)*100)
+  mutate(pct_samples_outlier_in = (num_samples/36)*100)
 
 gene_summary_table <- multi_sample_outliers %>%
   group_by(gene, num_samples) %>%
