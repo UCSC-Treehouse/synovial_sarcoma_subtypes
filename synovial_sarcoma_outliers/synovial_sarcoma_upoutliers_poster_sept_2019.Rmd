@@ -1,0 +1,152 @@
+---
+title: "`r gsub('.Rmd', ' ', gsub('_', ' ', knitr::current_input()))`"
+author: "Holly Beale"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    toc: true
+  # pdf_document: default
+  # fig_caption: yes
+---
+
+
+```{r}
+library(readr)
+library(dplyr)
+library(ggplot2)
+
+```
+
+# sample info
+```{r}
+
+fusion_results <- read_tsv("ss_sample_fusion_data - Sheet1.tsv")
+cluster_assignments <- read_tsv("synovial-hydra-assignments.tsv")
+histological_types <- read_tsv("SS_sample_histological_type_info - Sheet1.tsv")
+
+sample_info <- full_join(fusion_results, cluster_assignments, by=c("sample_id"="sample"))
+
+#add histology info
+sample_info_full <- full_join(sample_info, histological_types, by=c('sample_id'='th_sampleid')) 
+
+#calculate how many samples are in each SS subtype cluster 
+num_total_samples <- sample_info_full %>% mutate(num_total_samples = n())
+
+```
+
+
+# Gene lists
+```{r}
+
+#Add cancer gene and druggable gene info
+cancer_gene_names <- scan(file = "aggregatedCancerGenes_2018-01-04_12.20.15PM.txt", what = 'list')
+druggable_gene_names <- read_tsv(file = "treehouseDruggableGenes_2019-06-12.txt")
+shh_genes <- scan(file="shh_genes.txt", what='list', skip=2)
+
+```
+
+
+# gene expression info
+```{r}
+
+#column specifications: specifies data type found in each column
+col_spec=cols(
+  Gene = col_character(),
+  sample = col_double(),
+  is_top_5 = col_character(),
+  pc_low = col_double(),
+  pc_median = col_double(),
+  pc_high = col_double(),
+  pc_outlier = col_character(),
+  pc_is_filtered = col_character(),
+  pd_low = col_character(),
+  pd_median = col_character(),
+  pd_high = col_character(),
+  pd_outlier = col_character(),
+  pc_percentile = col_integer()
+)
+
+#combine all SS sample expression data files
+expression_data_raw<-lapply(sample_info_full$sample_id, function(sample_id) {
+  # sample_id = sample_info_full$sample_id[1]
+  file_name <-  paste0("syn_sarcoma_outliers/outlier_results_", sample_id)
+  if (file.exists(file_name)) {
+    raw_outlier_candidates <- read_tsv(file_name, col_types=col_spec) %>%
+      rename(expression_in_log2tpm1 =sample, gene=Gene) %>%
+      mutate(
+        sample_id=sample_id
+      ) 
+  }
+}) %>% bind_rows
+
+
+expression_data_filtered <- select(expression_data_raw, gene,pc_outlier, pd_outlier, sample_id, expression_in_log2tpm1, pc_high, is_top_5)
+
+
+##Add sample info to data for filtering
+expression_data_genes <- left_join(expression_data_filtered, num_total_samples, by="sample_id") 
+
+```
+
+# Select pc up outliers
+```{r}
+
+filtered_cancer_druggable_genes <- expression_data_genes %>%
+  mutate('cancer_gene' = gene %in% cancer_gene_names,  'TH_druggable_gene?' = gene %in% druggable_gene_names$gene, 'shh_pathway_gene' = gene %in% shh_genes) 
+#Filter for genes that are pan-cancer (pc) up-outliers
+ss_upoutliers <- filter(filtered_cancer_druggable_genes,pc_outlier=="pc_up") %>%
+  group_by(gene) %>% 
+  mutate(
+    n_ss_samples_with_upoutlier = n(),
+    frac_ss_samples_with_upoutlier = (n_ss_samples_with_upoutlier/num_total_samples)
+  ) %>% select(-pd_outlier, -pc_high, -is_top_5)
+
+```
+
+# Plot outliers
+```{r fig.height=7, fig.width=9}
+
+min_frac <- 0.1
+# library(cowplot)
+library(forcats)
+library(ggthemes)
+
+these_outliers <- ss_upoutliers %>%
+  filter(gene %in% druggable_gene_names$gene) %>%
+  # filter(frac_ss_samples_with_upoutlier>min_frac) %>%
+  ungroup %>%
+  mutate(gene = fct_reorder(gene, n_ss_samples_with_upoutlier)) %>%
+  group_by(sample_id) %>%
+  mutate(n_outliers_in_sample = n()) %>%
+  ungroup %>%
+  mutate(sample_id = fct_reorder(sample_id, n_outliers_in_sample)) %>%
+  filter(! is.na(SS18_fusion_partner))
+
+
+# with sample IDs  
+p <- ggplot(these_outliers) + geom_point(aes(x=gene, y=sample_id, color = SS18_fusion_partner), pch=15, size = 3)  +
+  facet_grid( SS18_fusion_partner ~ . , scales="free_y", space = "free") +
+  theme_hc() +
+ theme(axis.text.x = element_text(angle = 90, hjust = 1),
+       strip.text.y = element_text(angle = 90),
+       legend.position="right"
+       ) +
+  scale_color_brewer(palette = "Set1") +
+  xlab("Druggable up outlier gene")  +
+  ylab("Synovial sarcoma sample")
+
+p
+
+
+
+
+```
+
+```{r fig.height=5, fig.width=5}
+
+# without sample IDs  
+
+p + theme(axis.text.y = element_blank())
+
+```
+
