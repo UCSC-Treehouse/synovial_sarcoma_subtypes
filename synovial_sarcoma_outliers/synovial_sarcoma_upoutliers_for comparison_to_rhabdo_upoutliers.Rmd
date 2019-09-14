@@ -100,7 +100,7 @@ ss_upoutliers <- filter(filtered_cancer_druggable_genes,pc_outlier=="pc_up") %>%
   mutate(
     n_ss_samples_with_upoutlier = n(),
     pct_ss_samples_with_upoutlier = (n_ss_samples_with_upoutlier/num_total_samples)*100
-  ) %>% select(-pd_outlier, -pc_high, -is_top_5)
+  ) %>% select(-pd_outlier, -pc_high, is_top_5)
 
  
 #full list of all upoutliers of synovial sarcoma samples
@@ -193,6 +193,33 @@ outliers_all_hist_type <- ss_up_outliers_gt_10pct_samples %>%
   distinct(gene, histology, .keep_all=TRUE) %>%
   summarize(list_of_histologies = paste(histology, collapse=", ")) 
 
+```
+
+```{r}
+### Gli1 Expression
+
+gli1_expression_in_samples <-
+  filtered_cancer_druggable_genes %>%
+  filter(gene=="GLI1") %>%
+  arrange(desc(expression_in_log2tpm1))
+
+#Bar plot GLI1 expression in synovial sarcoma samples
+ggplot(gli1_expression_in_samples)+
+  geom_bar(aes(x=(reorder(sample_id, -expression_in_log2tpm1)), y=expression_in_log2tpm1, fill=is_top_5), 
+           colour='grey45', width=1, stat='identity', size=.2) +
+  scale_x_discrete(expand=c(0,0))+
+  scale_y_continuous(expand=c(0,0))+
+  labs(title= "Gli1 expression in Synovial Sarcoma samples", x="Synovial Sarcoma Samples") +
+  scale_fill_manual(values=c("grey66", "white"),
+                    name="In top 5% genes\nexpressed w/in sample",
+                    breaks=c("top5", NA),
+                    labels=c("yes","no"))+
+  theme(axis.text.x = element_blank(), axis.ticks.x=element_blank(),
+        aspect.ratio=1.5) +
+  geom_hline(yintercept = 3.123675, colour='royalblue4') + 
+  geom_text(aes(0,3.123675,label = 'overexpression threshold\nvalue = 3.1', vjust = -1), size=4,position= position_nudge(x=18, y=-0.5), colour='royalblue4')
+
+ggsave("Gli1_expression_poster_2019.png", dpi=300)
 ```
 
 
